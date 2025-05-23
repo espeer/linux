@@ -424,7 +424,6 @@ impl Cmdq {
         Ok(())
     }
 
-    #[expect(unused)]
     pub(crate) fn receive_msg_from_gsp<M: MessageFromGsp, R>(
         &mut self,
         timeout: Delta,
