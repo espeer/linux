@@ -349,7 +349,6 @@ impl FalconUCodeDesc {
         }
     }
 
-
     pub(crate) fn dmem_load_size(&self) -> u32 {
         match self {
             FalconUCodeDesc::V2(v2) => v2.dmem_load_size,
