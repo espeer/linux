@@ -240,27 +240,30 @@ impl super::Gsp {
             CoherentAllocation::<GspFwWprMeta>::alloc_coherent(dev, 1, GFP_KERNEL | __GFP_ZERO)?;
         dma_write!(wpr_meta[0] = GspFwWprMeta::new(&gsp_fw, &fb_layout)?)?;
 
-        set_system_info(&mut self.cmdq, pdev, bar, chipset)?;
-        build_registry(&mut self.cmdq, bar)?;
+        // For SEC2-based architectures, reset GSP and boot it before SEC2
+        if matches!(
+            chipset.arch(),
+            Architecture::Turing | Architecture::Ampere | Architecture::Ada
+        ) {
+            gsp_falcon.reset(bar)?;
+            let libos_handle = self.libos.dma_handle();
+            let (mbox0, mbox1) = gsp_falcon.boot(
+                bar,
+                Some(libos_handle as u32),
+                Some((libos_handle >> 32) as u32),
+            )?;
+            dev_dbg!(
+                pdev.as_ref(),
+                "GSP MBOX0: {:#x}, MBOX1: {:#x}\n",
+                mbox0,
+                mbox1
+            );
 
-        gsp_falcon.reset(bar)?;
-        let libos_handle = self.libos.dma_handle();
-        let (mbox0, mbox1) = gsp_falcon.boot(
-            bar,
-            Some(libos_handle as u32),
-            Some((libos_handle >> 32) as u32),
-        )?;
-        dev_dbg!(
-            pdev.as_ref(),
-            "GSP MBOX0: {:#x}, MBOX1: {:#x}\n",
-            mbox0,
-            mbox1
-        );
-
-        dev_dbg!(
-            pdev.as_ref(),
-            "Using SEC2 to load and run the booter_load firmware...\n"
-        );
+            dev_dbg!(
+                pdev.as_ref(),
+                "Using SEC2 to load and run the booter_load firmware...\n"
+            );
+        }
 
         match chipset.arch() {
             Architecture::Turing | Architecture::Ampere | Architecture::Ada => {
@@ -295,10 +298,15 @@ impl super::Gsp {
             gsp_falcon.is_riscv_active(bar),
         );
 
+        // Now that GSP is active, send system info and registry
+        set_system_info(&mut self.cmdq, pdev, bar, chipset)?;
+        build_registry(&mut self.cmdq, bar)?;
+
         if matches!(
             chipset.arch(),
             Architecture::Turing | Architecture::Ampere | Architecture::Ada
         ) {
+            let libos_handle = self.libos.dma_handle();
             // Create and run the GSP sequencer
             GspSequencer::run(
                 &mut self.cmdq,
