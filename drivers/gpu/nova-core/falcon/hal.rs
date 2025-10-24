@@ -34,7 +34,7 @@ pub(crate) trait FalconHal<E: FalconEngine>: Send + Sync {
 
     /// Check if the RISC-V core is active.
     /// Returns `true` if the RISC-V core is active, `false` otherwise.
-    fn is_riscv_active(&self, bar: &Bar0) -> Result<bool>;
+    fn is_riscv_active(&self, bar: &Bar0) -> bool;
 }
 
 /// Returns a boxed falcon HAL adequate for `chipset`.

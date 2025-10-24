@@ -625,7 +625,7 @@ impl<E: FalconEngine + 'static> Falcon<E> {
     /// Check if the RISC-V core is active.
     ///
     /// Returns `true` if the RISC-V core is active, `false` otherwise.
-    pub(crate) fn is_riscv_active(&self, bar: &Bar0) -> Result<bool> {
+    pub(crate) fn is_riscv_active(&self, bar: &Bar0) -> bool {
         self.hal.is_riscv_active(bar)
     }
 
