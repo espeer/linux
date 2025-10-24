@@ -4,9 +4,7 @@ use core::marker::PhantomData;
 use kernel::prelude::*;
 
 use crate::driver::Bar0;
-use crate::falcon::{
-    Falcon, FalconBromParams, FalconEngine
-};
+use crate::falcon::{Falcon, FalconBromParams, FalconEngine};
 use crate::regs;
 
 use super::FalconHal;
@@ -38,8 +36,8 @@ impl<E: FalconEngine> FalconHal<E> for Tu102<E> {
         Ok(())
     }
 
-    fn is_riscv_active(&self, bar: &Bar0) -> Result<bool> {
+    fn is_riscv_active(&self, bar: &Bar0) -> bool {
         let cpuctl = regs::NV_PRISCV_RISCV_CORE_SWITCH_RISCV_STATUS::read(bar, &E::ID);
-        Ok(cpuctl.active_stat())
+        cpuctl.active_stat()
     }
 }
