@@ -1,0 +1,13 @@
+name: GPU Test
+on: 
+  pull_request:
+    branches:
+      - nova-test 
+jobs:
+  build:
+     runs-on: [self-hosted ]
+     steps:
+       - uses: actions/checkout@v5
+       - run: |
+          time KBUILD_BUILD_TIMESTAMP='' make LLVM=1 CC="ccache clang" -j 32
+          make modules_install INSTALL_MOD_PATH=/nova/mods
