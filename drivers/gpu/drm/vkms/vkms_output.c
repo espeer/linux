@@ -4,7 +4,6 @@
 #include "vkms_connector.h"
 #include "vkms_drv.h"
 #include <drm/drm_managed.h>
-#include <drm/drm_print.h>
 
 int vkms_output_init(struct vkms_device *vkmsdev)
 {

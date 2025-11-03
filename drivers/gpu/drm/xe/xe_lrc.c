@@ -1214,7 +1214,8 @@ static int setup_bo(struct bo_setup_state *state)
 	ssize_t remain;
 
 	if (state->lrc->bo->vmap.is_iomem) {
-		xe_gt_assert(state->hwe->gt, state->buffer);
+		if (!state->buffer)
+			return -ENOMEM;
 		state->ptr = state->buffer;
 	} else {
 		state->ptr = state->lrc->bo->vmap.vaddr + state->offset;
@@ -1247,7 +1248,7 @@ fail:
 
 static void finish_bo(struct bo_setup_state *state)
 {
-	if (!state->lrc->bo->vmap.is_iomem)
+	if (!state->buffer)
 		return;
 
 	xe_map_memcpy_to(gt_to_xe(state->lrc->gt), &state->lrc->bo->vmap,
@@ -1302,11 +1303,8 @@ static int setup_wa_bb(struct xe_lrc *lrc, struct xe_hw_engine *hwe)
 	u32 *buf = NULL;
 	int ret;
 
-	if (lrc->bo->vmap.is_iomem) {
+	if (lrc->bo->vmap.is_iomem)
 		buf = kmalloc(LRC_WA_BB_SIZE, GFP_KERNEL);
-		if (!buf)
-			return -ENOMEM;
-	}
 
 	ret = xe_lrc_setup_wa_bb_with_scratch(lrc, hwe, buf);
 
@@ -1349,11 +1347,8 @@ setup_indirect_ctx(struct xe_lrc *lrc, struct xe_hw_engine *hwe)
 	if (xe_gt_WARN_ON(lrc->gt, !state.funcs))
 		return 0;
 
-	if (lrc->bo->vmap.is_iomem) {
+	if (lrc->bo->vmap.is_iomem)
 		state.buffer = kmalloc(state.max_size, GFP_KERNEL);
-		if (!state.buffer)
-			return -ENOMEM;
-	}
 
 	ret = setup_bo(&state);
 	if (ret) {
@@ -1417,9 +1412,8 @@ static int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 
 	bo_flags = XE_BO_FLAG_VRAM_IF_DGFX(tile) | XE_BO_FLAG_GGTT |
 		   XE_BO_FLAG_GGTT_INVALIDATE;
-
-	if ((vm && vm->xef) || init_flags & XE_LRC_CREATE_USER_CTX) /* userspace */
-		bo_flags |= XE_BO_FLAG_PINNED_LATE_RESTORE | XE_BO_FLAG_FORCE_USER_VRAM;
+	if (vm && vm->xef) /* userspace */
+		bo_flags |= XE_BO_FLAG_PINNED_LATE_RESTORE;
 
 	lrc->bo = xe_bo_create_pin_map_novm(xe, tile,
 					    bo_size,

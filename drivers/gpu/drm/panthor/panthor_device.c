@@ -13,7 +13,6 @@
 
 #include <drm/drm_drv.h>
 #include <drm/drm_managed.h>
-#include <drm/drm_print.h>
 
 #include "panthor_devfreq.h"
 #include "panthor_device.h"
@@ -66,16 +65,6 @@ static int panthor_clk_init(struct panthor_device *ptdev)
 	return 0;
 }
 
-static int panthor_init_power(struct device *dev)
-{
-	struct dev_pm_domain_list  *pd_list = NULL;
-
-	if (dev->pm_domain)
-		return 0;
-
-	return devm_pm_domain_attach_list(dev, NULL, &pd_list);
-}
-
 void panthor_device_unplug(struct panthor_device *ptdev)
 {
 	/* This function can be called from two different path: the reset work
@@ -94,8 +83,6 @@ void panthor_device_unplug(struct panthor_device *ptdev)
 		return;
 	}
 
-	drm_WARN_ON(&ptdev->base, pm_runtime_get_sync(ptdev->base.dev) < 0);
-
 	/* Call drm_dev_unplug() so any access to HW blocks happening after
 	 * that point get rejected.
 	 */
@@ -105,6 +92,8 @@ void panthor_device_unplug(struct panthor_device *ptdev)
 	 * future callers will wait on ptdev->unplug.done anyway.
 	 */
 	mutex_unlock(&ptdev->unplug.lock);
+
+	drm_WARN_ON(&ptdev->base, pm_runtime_get_sync(ptdev->base.dev) < 0);
 
 	/* Now, try to cleanly shutdown the GPU before the device resources
 	 * get reclaimed.
@@ -131,7 +120,7 @@ static void panthor_device_reset_cleanup(struct drm_device *ddev, void *data)
 {
 	struct panthor_device *ptdev = container_of(ddev, struct panthor_device, base);
 
-	disable_work_sync(&ptdev->reset.work);
+	cancel_work_sync(&ptdev->reset.work);
 	destroy_workqueue(ptdev->reset.wq);
 }
 
@@ -183,8 +172,6 @@ int panthor_device_init(struct panthor_device *ptdev)
 	struct page *p;
 	int ret;
 
-	ptdev->soc_data = of_device_get_match_data(ptdev->base.dev);
-
 	init_completion(&ptdev->unplug.done);
 	ret = drmm_mutex_init(&ptdev->base, &ptdev->unplug.lock);
 	if (ret)
@@ -231,12 +218,6 @@ int panthor_device_init(struct panthor_device *ptdev)
 	ret = panthor_clk_init(ptdev);
 	if (ret)
 		return ret;
-
-	ret = panthor_init_power(ptdev->base.dev);
-	if (ret < 0) {
-		drm_err(&ptdev->base, "init power domains failed, ret=%d", ret);
-		return ret;
-	}
 
 	ret = panthor_devfreq_init(ptdev);
 	if (ret)

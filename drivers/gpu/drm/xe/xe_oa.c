@@ -10,7 +10,6 @@
 
 #include <drm/drm_drv.h>
 #include <drm/drm_managed.h>
-#include <drm/drm_syncobj.h>
 #include <uapi/drm/xe_drm.h>
 
 #include <generated/xe_wa_oob.h>
@@ -838,8 +837,7 @@ static void xe_oa_disable_metric_set(struct xe_oa_stream *stream)
 		xe_oa_configure_oa_context(stream, false);
 
 	/* Make sure we disable noa to save power. */
-	if (GT_VER(stream->gt) < 35)
-		xe_mmio_rmw32(mmio, RPM_CONFIG1, GT_NOA_ENABLE, 0);
+	xe_mmio_rmw32(mmio, RPM_CONFIG1, GT_NOA_ENABLE, 0);
 
 	sqcnt1 = SQCNT1_PMON_ENABLE |
 		 (HAS_OA_BPC_REPORTING(stream->oa->xe) ? SQCNT1_OABPC : 0);
@@ -870,7 +868,7 @@ static void xe_oa_stream_destroy(struct xe_oa_stream *stream)
 
 	xe_oa_free_oa_buffer(stream);
 
-	xe_force_wake_put(gt_to_fw(gt), stream->fw_ref);
+	xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	xe_pm_runtime_put(stream->oa->xe);
 
 	/* Wa_1509372804:pvc: Unset the override of GUCRC mode to enable rc6 */
@@ -1391,9 +1389,7 @@ static int xe_oa_user_extensions(struct xe_oa *oa, enum xe_oa_user_extn_from fro
 	return 0;
 }
 
-static int xe_oa_parse_syncs(struct xe_oa *oa,
-			     struct xe_oa_stream *stream,
-			     struct xe_oa_open_param *param)
+static int xe_oa_parse_syncs(struct xe_oa *oa, struct xe_oa_open_param *param)
 {
 	int ret, num_syncs, num_ufence = 0;
 
@@ -1413,9 +1409,7 @@ static int xe_oa_parse_syncs(struct xe_oa *oa,
 
 	for (num_syncs = 0; num_syncs < param->num_syncs; num_syncs++) {
 		ret = xe_sync_entry_parse(oa->xe, param->xef, &param->syncs[num_syncs],
-					  &param->syncs_user[num_syncs],
-					  stream->ufence_syncobj,
-					  ++stream->ufence_timeline_value, 0);
+					  &param->syncs_user[num_syncs], 0);
 		if (ret)
 			goto err_syncs;
 
@@ -1545,7 +1539,7 @@ static long xe_oa_config_locked(struct xe_oa_stream *stream, u64 arg)
 		return -ENODEV;
 
 	param.xef = stream->xef;
-	err = xe_oa_parse_syncs(stream->oa, stream, &param);
+	err = xe_oa_parse_syncs(stream->oa, &param);
 	if (err)
 		goto err_config_put;
 
@@ -1641,7 +1635,6 @@ static void xe_oa_destroy_locked(struct xe_oa_stream *stream)
 	if (stream->exec_q)
 		xe_exec_queue_put(stream->exec_q);
 
-	drm_syncobj_put(stream->ufence_syncobj);
 	kfree(stream);
 }
 
@@ -1717,6 +1710,7 @@ static int xe_oa_stream_init(struct xe_oa_stream *stream,
 			     struct xe_oa_open_param *param)
 {
 	struct xe_gt *gt = param->hwe->gt;
+	unsigned int fw_ref;
 	int ret;
 
 	stream->exec_q = param->exec_q;
@@ -1771,8 +1765,8 @@ static int xe_oa_stream_init(struct xe_oa_stream *stream,
 
 	/* Take runtime pm ref and forcewake to disable RC6 */
 	xe_pm_runtime_get(stream->oa->xe);
-	stream->fw_ref = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
-	if (!xe_force_wake_ref_has_domain(stream->fw_ref, XE_FORCEWAKE_ALL)) {
+	fw_ref = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (!xe_force_wake_ref_has_domain(fw_ref, XE_FORCEWAKE_ALL)) {
 		ret = -ETIMEDOUT;
 		goto err_fw_put;
 	}
@@ -1817,7 +1811,7 @@ err_put_k_exec_q:
 err_free_oa_buf:
 	xe_oa_free_oa_buffer(stream);
 err_fw_put:
-	xe_force_wake_put(gt_to_fw(gt), stream->fw_ref);
+	xe_force_wake_put(gt_to_fw(gt), fw_ref);
 	xe_pm_runtime_put(stream->oa->xe);
 	if (stream->override_gucrc)
 		xe_gt_WARN_ON(gt, xe_guc_pc_unset_gucrc_mode(&gt->uc.guc.pc));
@@ -1832,7 +1826,6 @@ static int xe_oa_stream_open_ioctl_locked(struct xe_oa *oa,
 					  struct xe_oa_open_param *param)
 {
 	struct xe_oa_stream *stream;
-	struct drm_syncobj *ufence_syncobj;
 	int stream_fd;
 	int ret;
 
@@ -1843,30 +1836,16 @@ static int xe_oa_stream_open_ioctl_locked(struct xe_oa *oa,
 		goto exit;
 	}
 
-	ret = drm_syncobj_create(&ufence_syncobj, DRM_SYNCOBJ_CREATE_SIGNALED,
-				 NULL);
-	if (ret)
-		goto exit;
-
 	stream = kzalloc(sizeof(*stream), GFP_KERNEL);
 	if (!stream) {
 		ret = -ENOMEM;
-		goto err_syncobj;
+		goto exit;
 	}
-	stream->ufence_syncobj = ufence_syncobj;
-	stream->oa = oa;
 
-	ret = xe_oa_parse_syncs(oa, stream, param);
+	stream->oa = oa;
+	ret = xe_oa_stream_init(stream, param);
 	if (ret)
 		goto err_free;
-
-	ret = xe_oa_stream_init(stream, param);
-	if (ret) {
-		while (param->num_syncs--)
-			xe_sync_entry_cleanup(&param->syncs[param->num_syncs]);
-		kfree(param->syncs);
-		goto err_free;
-	}
 
 	if (!param->disabled) {
 		ret = xe_oa_enable_locked(stream);
@@ -1891,8 +1870,6 @@ err_destroy:
 	xe_oa_stream_destroy(stream);
 err_free:
 	kfree(stream);
-err_syncobj:
-	drm_syncobj_put(ufence_syncobj);
 exit:
 	return ret;
 }
@@ -2106,14 +2083,22 @@ int xe_oa_stream_open_ioctl(struct drm_device *dev, u64 data, struct drm_file *f
 		goto err_exec_q;
 	}
 
+	ret = xe_oa_parse_syncs(oa, &param);
+	if (ret)
+		goto err_exec_q;
+
 	mutex_lock(&param.hwe->gt->oa.gt_lock);
 	ret = xe_oa_stream_open_ioctl_locked(oa, &param);
 	mutex_unlock(&param.hwe->gt->oa.gt_lock);
 	if (ret < 0)
-		goto err_exec_q;
+		goto err_sync_cleanup;
 
 	return ret;
 
+err_sync_cleanup:
+	while (param.num_syncs--)
+		xe_sync_entry_cleanup(&param.syncs[param.num_syncs]);
+	kfree(param.syncs);
 err_exec_q:
 	if (param.exec_q)
 		xe_exec_queue_put(param.exec_q);

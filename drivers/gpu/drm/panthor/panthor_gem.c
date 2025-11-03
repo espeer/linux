@@ -8,7 +8,6 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 
-#include <drm/drm_print.h>
 #include <drm/panthor_drm.h>
 
 #include "panthor_device.h"
@@ -87,6 +86,7 @@ static void panthor_gem_free_object(struct drm_gem_object *obj)
 void panthor_kernel_bo_destroy(struct panthor_kernel_bo *bo)
 {
 	struct panthor_vm *vm;
+	int ret;
 
 	if (IS_ERR_OR_NULL(bo))
 		return;
@@ -94,11 +94,18 @@ void panthor_kernel_bo_destroy(struct panthor_kernel_bo *bo)
 	vm = bo->vm;
 	panthor_kernel_bo_vunmap(bo);
 
-	drm_WARN_ON(bo->obj->dev,
-		    to_panthor_bo(bo->obj)->exclusive_vm_root_gem != panthor_vm_root_gem(vm));
-	panthor_vm_unmap_range(vm, bo->va_node.start, bo->va_node.size);
+	if (drm_WARN_ON(bo->obj->dev,
+			to_panthor_bo(bo->obj)->exclusive_vm_root_gem != panthor_vm_root_gem(vm)))
+		goto out_free_bo;
+
+	ret = panthor_vm_unmap_range(vm, bo->va_node.start, bo->va_node.size);
+	if (ret)
+		goto out_free_bo;
+
 	panthor_vm_free_va(vm, &bo->va_node);
 	drm_gem_object_put(bo->obj);
+
+out_free_bo:
 	panthor_vm_put(vm);
 	kfree(bo);
 }

@@ -31,8 +31,6 @@
 
 #define pr_fmt(fmt) "[TTM] " fmt
 
-#include <drm/drm_print.h>
-#include <drm/ttm/ttm_allocation.h>
 #include <drm/ttm/ttm_bo.h>
 #include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_tt.h>
@@ -320,17 +318,18 @@ static void ttm_bo_release(struct kref *kref)
 	bo->destroy(bo);
 }
 
-/* TODO: remove! */
+/**
+ * ttm_bo_put
+ *
+ * @bo: The buffer object.
+ *
+ * Unreference a buffer object.
+ */
 void ttm_bo_put(struct ttm_buffer_object *bo)
 {
 	kref_put(&bo->kref, ttm_bo_release);
 }
-
-void ttm_bo_fini(struct ttm_buffer_object *bo)
-{
-	ttm_bo_put(bo);
-}
-EXPORT_SYMBOL(ttm_bo_fini);
+EXPORT_SYMBOL(ttm_bo_put);
 
 static int ttm_bo_bounce_temp_buffer(struct ttm_buffer_object *bo,
 				     struct ttm_operation_ctx *ctx,
@@ -879,8 +878,7 @@ bounce:
 
 	/* For backward compatibility with userspace */
 	if (ret == -ENOSPC)
-		return bo->bdev->alloc_flags & TTM_ALLOCATION_PROPAGATE_ENOSPC ?
-		       ret : -ENOMEM;
+		return -ENOMEM;
 
 	/*
 	 * We might need to add a TTM.

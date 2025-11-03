@@ -26,7 +26,6 @@
  */
 
 #include <drm/drm_gpuvm.h>
-#include <drm/drm_print.h>
 
 #include <linux/export.h>
 #include <linux/interval_tree_generic.h>

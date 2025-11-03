@@ -8,7 +8,6 @@
 
 #include "xe_sync_types.h"
 
-struct drm_syncobj;
 struct xe_device;
 struct xe_exec_queue;
 struct xe_file;
@@ -22,8 +21,6 @@ struct xe_vm;
 int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 			struct xe_sync_entry *sync,
 			struct drm_xe_sync __user *sync_user,
-			struct drm_syncobj *ufence_syncobj,
-			u64 ufence_timeline_value,
 			unsigned int flags);
 int xe_sync_entry_add_deps(struct xe_sync_entry *sync,
 			   struct xe_sched_job *job);

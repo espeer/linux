@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0 or MIT
 /* Copyright 2025 ARM Limited. All rights reserved. */
 
-#include <drm/drm_print.h>
-
 #include "panthor_device.h"
 #include "panthor_hw.h"
 #include "panthor_regs.h"

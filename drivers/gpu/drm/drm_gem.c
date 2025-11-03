@@ -101,8 +101,10 @@ drm_gem_init(struct drm_device *dev)
 
 	vma_offset_manager = drmm_kzalloc(dev, sizeof(*vma_offset_manager),
 					  GFP_KERNEL);
-	if (!vma_offset_manager)
+	if (!vma_offset_manager) {
+		DRM_ERROR("out of memory\n");
 		return -ENOMEM;
+	}
 
 	dev->vma_offset_manager = vma_offset_manager;
 	drm_vma_offset_manager_init(vma_offset_manager,
@@ -783,10 +785,9 @@ static int objects_lookup(struct drm_file *filp, u32 *handle, int count,
 int drm_gem_objects_lookup(struct drm_file *filp, void __user *bo_handles,
 			   int count, struct drm_gem_object ***objs_out)
 {
-	struct drm_device *dev = filp->minor->dev;
-	struct drm_gem_object **objs;
-	u32 *handles;
 	int ret;
+	u32 *handles;
+	struct drm_gem_object **objs;
 
 	if (!count)
 		return 0;
@@ -806,7 +807,7 @@ int drm_gem_objects_lookup(struct drm_file *filp, void __user *bo_handles,
 
 	if (copy_from_user(handles, bo_handles, count * sizeof(u32))) {
 		ret = -EFAULT;
-		drm_dbg_core(dev, "Failed to copy in GEM handles\n");
+		DRM_DEBUG("Failed to copy in GEM handles\n");
 		goto out;
 	}
 
@@ -854,13 +855,12 @@ EXPORT_SYMBOL(drm_gem_object_lookup);
 long drm_gem_dma_resv_wait(struct drm_file *filep, u32 handle,
 				    bool wait_all, unsigned long timeout)
 {
-	struct drm_device *dev = filep->minor->dev;
-	struct drm_gem_object *obj;
 	long ret;
+	struct drm_gem_object *obj;
 
 	obj = drm_gem_object_lookup(filep, handle);
 	if (!obj) {
-		drm_dbg_core(dev, "Failed to look up GEM BO %d\n", handle);
+		DRM_DEBUG("Failed to look up GEM BO %d\n", handle);
 		return -EINVAL;
 	}
 

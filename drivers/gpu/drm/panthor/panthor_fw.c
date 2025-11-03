@@ -16,7 +16,6 @@
 
 #include <drm/drm_drv.h>
 #include <drm/drm_managed.h>
-#include <drm/drm_print.h>
 
 #include "panthor_device.h"
 #include "panthor_fw.h"
@@ -1164,7 +1163,7 @@ void panthor_fw_unplug(struct panthor_device *ptdev)
 {
 	struct panthor_fw_section *section;
 
-	disable_delayed_work_sync(&ptdev->fw->watchdog.ping_work);
+	cancel_delayed_work_sync(&ptdev->fw->watchdog.ping_work);
 
 	if (!IS_ENABLED(CONFIG_PM) || pm_runtime_active(ptdev->base.dev)) {
 		/* Make sure the IRQ handler cannot be called after that point. */

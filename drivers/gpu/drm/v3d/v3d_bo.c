@@ -18,8 +18,6 @@
 #include <linux/dma-buf.h>
 #include <linux/vmalloc.h>
 
-#include <drm/drm_print.h>
-
 #include "v3d_drv.h"
 #include "uapi/drm/v3d_drm.h"
 
