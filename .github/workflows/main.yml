@@ -1,0 +1,26 @@
+name: GPU Test
+on: 
+  pull_request:
+    branches:
+      - nova-test 
+jobs:
+  build:
+     runs-on: [ self-hosted ]
+     steps:
+       - uses: actions/checkout@v5
+       - run: |
+          time KBUILD_BUILD_TIMESTAMP='' make LLVM=1 CC="ccache clang" -j 32
+          sudo make modules_install
+          sudo update-initramfs -k 6.18.0-rc2-nova-test+ -c
+          cd / && tar cz lib/modules/6.18.0-rc2-nova-test+ | ssh root@10.176.190.208 "cd / && tar xzv"
+          scp /nova/gpu-runner/_work/linux/linux/arch/x86_64/boot/bzImage root@10.176.190.208:/
+          scp /boot/initrd.img-6.18.0-rc2-nova-test+ root@10.176.190.208:/
+          echo "Loading kexec kernel..."
+          ssh root@10.176.190.208 "kexec -l /bzImage --initrd=/initrd.img-6.18.0-rc2-nova-test+ --reuse-cmdline"
+          echo "Booting kernel..."
+          ssh root@10.176.190.208 "kexec -e" &
+          sleep 30 
+          kill %1
+          echo "Waiting..."
+          sleep 180
+          ssh root@10.176.190.208 "dmesg | grep Nova"
