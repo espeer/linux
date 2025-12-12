@@ -83,16 +83,26 @@ define_chipset!({
     GA104 = 0x174,
     GA106 = 0x176,
     GA107 = 0x177,
+    // Hopper
+    GH100 = 0x180,
     // Ada
     AD102 = 0x192,
     AD103 = 0x193,
     AD104 = 0x194,
     AD106 = 0x196,
     AD107 = 0x197,
+    // Blackwell
+    GB100 = 0x1a0,
+    GB102 = 0x1a2,
+    GB202 = 0x1b2,
+    GB203 = 0x1b3,
+    GB205 = 0x1b5,
+    GB206 = 0x1b6,
+    GB207 = 0x1b7,
 });
 
 impl Chipset {
-    pub(crate) fn arch(&self) -> Architecture {
+    pub(crate) const fn arch(&self) -> Architecture {
         match self {
             Self::TU102 | Self::TU104 | Self::TU106 | Self::TU117 | Self::TU116 => {
                 Architecture::Turing
@@ -100,10 +110,22 @@ impl Chipset {
             Self::GA100 | Self::GA102 | Self::GA103 | Self::GA104 | Self::GA106 | Self::GA107 => {
                 Architecture::Ampere
             }
+            Self::GH100 => Architecture::Hopper,
             Self::AD102 | Self::AD103 | Self::AD104 | Self::AD106 | Self::AD107 => {
                 Architecture::Ada
             }
+            Self::GB100
+            | Self::GB102
+            | Self::GB202
+            | Self::GB203
+            | Self::GB205
+            | Self::GB206
+            | Self::GB207 => Architecture::Blackwell,
         }
+    }
+
+    pub(crate) fn needs_large_reserved_mem(&self) -> bool {
+        matches!(self.arch(), Architecture::Hopper | Architecture::Blackwell)
     }
 }
 
@@ -132,7 +154,22 @@ pub(crate) enum Architecture {
     #[default]
     Turing = 0x16,
     Ampere = 0x17,
+    Hopper = 0x18,
     Ada = 0x19,
+    Blackwell = 0x1b,
+}
+
+impl Architecture {
+    /// Returns the number of DMA address bits supported by this architecture.
+    ///
+    /// Hopper and Blackwell support 52-bit DMA addresses, while earlier architectures
+    /// (Turing, Ampere, Ada) support 47-bit DMA addresses.
+    pub(crate) const fn dma_addr_bits(&self) -> u32 {
+        match self {
+            Self::Turing | Self::Ampere | Self::Ada => 47,
+            Self::Hopper | Self::Blackwell => 52,
+        }
+    }
 }
 
 impl TryFrom<u8> for Architecture {
@@ -142,7 +179,9 @@ impl TryFrom<u8> for Architecture {
         match value {
             0x16 => Ok(Self::Turing),
             0x17 => Ok(Self::Ampere),
+            0x18 => Ok(Self::Hopper),
             0x19 => Ok(Self::Ada),
+            0x1b => Ok(Self::Blackwell),
             _ => Err(ENODEV),
         }
     }
@@ -179,6 +218,20 @@ impl fmt::Display for Revision {
 pub(crate) struct Spec {
     chipset: Chipset,
     revision: Revision,
+}
+
+/// Reads the GPU architecture from BAR0 registers.
+///
+/// This is a lightweight check used early in probe to determine the correct DMA address width
+/// before the full [`Spec`] is constructed.
+pub(crate) fn read_architecture(bar: &Bar0) -> Result<Architecture> {
+    let boot0 = regs::NV_PMC_BOOT_0::read(bar);
+
+    if boot0.is_older_than_fermi() {
+        return Err(ENODEV);
+    }
+
+    regs::NV_PMC_BOOT_42::read(bar).architecture()
 }
 
 impl Spec {
@@ -267,8 +320,13 @@ impl Gpu {
 
             // We must wait for GFW_BOOT completion before doing any significant setup on the GPU.
             _: {
-                gfw::wait_gfw_boot_completion(bar)
-                    .inspect_err(|_| dev_err!(pdev.as_ref(), "GFW boot did not complete"))?;
+                if matches!(
+                    spec.chipset.arch(),
+                    Architecture::Turing | Architecture::Ampere | Architecture::Ada
+                ) {
+                    gfw::wait_gfw_boot_completion(bar)
+                        .inspect_err(|_| dev_err!(pdev.as_ref(), "GFW boot did not complete"))?;
+                }
             },
 
             sysmem_flush: SysmemFlush::register(pdev.as_ref(), bar, spec.chipset)?,
